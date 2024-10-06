@@ -21,17 +21,30 @@
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": [
-              "zone.js"
+              "src/polyfills.ts"
             ],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
-              {
-                "glob": "**/*",
-                "input": "public"
-              }
+                {
+                    "glob": "**/*",
+                    "ignore": ["package.json"],
+                    "input": "src/assets/",
+                    "output": "/assets/"
+                },
+                {
+                    "glob": "favicon.ico",
+                    "input": "src/",
+                    "output": "/"
+                },
+                {
+                    "glob": "package.json",
+                    "input": "src/assets/",
+                    "output": "/"
+                }
             ],
             "styles": [
+              "src/assets/fonts/font-awesome-4.7.0/css/font-awesome.min.css",
               "src/styles.scss"
             ],
             "scripts": []
@@ -55,7 +68,8 @@
             "development": {
               "optimization": false,
               "extractLicenses": false,
-              "sourceMap": true
+              "sourceMap": true,
+              "namedChunks": true
             }
           },
           "defaultConfiguration": "production"
