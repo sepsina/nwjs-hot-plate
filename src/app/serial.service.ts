@@ -1,9 +1,13 @@
 ///<reference types="chrome"/>
 //'use strict';
-import { Injectable, NgZone } from '@angular/core';
-import { EventsService } from './events.service';
-import { GlobalsService } from './globals.service';
+import {
+    Injectable,
+    inject,
+    signal
+} from '@angular/core';
+
 import { UtilsService } from './utils.service';
+
 import * as gIF from './gIF';
 import * as gConst from './gConst';
 
@@ -17,6 +21,10 @@ export class SerialService {
     portOpenFlag = false;
     private portIdx = 0;
     portPath = '';
+
+    s_new_temp = signal<gIF.tempRsp_t>({
+        rtd_adc: NaN
+    });
 
     testPortTMO: any;
     findPortTMO: any;
@@ -40,12 +48,9 @@ export class SerialService {
     txBuf = new Uint8Array(1024);
     rwBuf = new gIF.rwBuf_t();
 
-    slMsg = {} as gIF.slMsg_t;
+    utils = inject(UtilsService);
 
-    constructor(private events: EventsService,
-                private globals: GlobalsService,
-                private utils: UtilsService,
-                private ngZone: NgZone) {
+    constructor() {
         setTimeout(()=>{
             this.checkCom();
         }, 8000);
@@ -94,8 +99,6 @@ export class SerialService {
     async closeComPort() {
         if(this.connID > -1){
             this.utils.sendMsg('close port', 'red');
-            this.events.publish('closePort', 'close');
-
             const result = await this.closePortAsync(this.connID);
             if(result){
                 this.connID = -1;
@@ -237,9 +240,10 @@ export class SerialService {
                 }
                 case gConst.SL_END_CHAR: {
                     if(this.crc == this.calcCRC) {
-                        this.slMsg.type = this.msgType;
-                        this.slMsg.msg = this.rxBuf.slice(0, this.msgLen);
-                        this.processMsg(this.slMsg);
+                        const slMsg = {} as gIF.slMsg_t;
+                        slMsg.type = this.msgType;
+                        slMsg.msg = this.rxBuf.slice(0, this.msgLen);
+                        this.processMsg(slMsg);
                     }
                     this.rxState = gIF.eRxState.E_STATE_RX_WAIT_START;
                     break;
@@ -321,9 +325,9 @@ export class SerialService {
                 break;
             }
             case gConst.SL_MSG_SEND_TEMP: {
-                const tempRsp = {} as gIF.tempRsp_t;
-                tempRsp.rtd_adc = this.rwBuf.read_uint32_LE();
-                this.events.publish('newTemp', tempRsp);
+                const rsp = {} as gIF.tempRsp_t;
+                rsp.rtd_adc = this.rwBuf.read_uint32_LE();
+                this.s_new_temp.set(rsp);
                 break;
             }
             case gConst.SL_MSG_LOG: {

@@ -8,40 +8,44 @@
     </div>
     <div class="row-left">
         <label>set point:</label>
-        <input
-            #sp
+        <input id="sp"
+            #sp_ref
             type="number"
-            (change)="spChanged(sp.value)"
-            (blur)="spBlur(sp.value)">
+            [ngModel]="s_set_point()"
+            (ngModelChange)="spChanged($event)"
+            (blur)="spBlur()">
     </div>
     <div class="row-left">
         <label>hist:</label>
-        <input
-            #hist
+        <input id="hist"
+            #hist_ref
             type="number"
-            (change)="histChanged(hist.value)"
-            (blur)="histBlur(hist.value)">
+            step="0.1"
+            [ngModel]="s_hist()"
+            (ngModelChange)="histChanged($event)"
+            (blur)="histBlur()">
     </div>
     <div class="row-left">
         <label>duty:</label>
-        <input
-            #duty
+        <input id="duty"
+            #duty_ref
             type="number"
-            (change)="dutyChanged(duty.value)"
-            (blur)="dutyBlur(duty.value)">
+            [ngModel]="s_ssr_duty()"
+            (ngModelChange)="dutyChanged($event)"
+            (blur)="dutyBlur()">
     </div>
 </div>
 
 <div class="col-top-strech app-card" id="chart-cont">
     <div class="row-left" id="t_rtd" #RTD>
-        {{t_rtd}}
+        {{t_rtd()}}
     </div>
     <div class="col-top-strech" id="chart">
         <canvas id="canvas"></canvas>
     </div>
     <div id="x-axe">
         <div>
-            {{duration}}
+            {{duration()}}
         </div>
         <div>
             00:00:00

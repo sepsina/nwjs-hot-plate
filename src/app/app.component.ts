@@ -2,22 +2,23 @@ import {
     AfterViewInit,
     Component,
     ElementRef,
-    HostListener,
-    NgZone,
-    OnInit,
-    ViewChild
+    effect,
+    inject,
+    signal,
+    viewChild,
+    ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
 
 import { SerialService } from './serial.service';
-import { EventsService } from './events.service';
 import { UtilsService } from './utils.service';
 
 import Chart from 'chart.js/auto';
 
 import * as gConst from './gConst';
 import * as gIF from './gIF';
+import { FormsModule } from '@angular/forms';
 
 const INVALID_TEMP = -1000;
 const BAD_CNT = 5;
@@ -37,48 +38,64 @@ const HIST_MIN = 0;
     selector: 'app-root',
     standalone: true,
     imports: [
-        CommonModule
+        CommonModule,
+        FormsModule
     ],
     templateUrl: './app.component.html',
-    styleUrl: './app.component.scss'
+    styleUrls: ['./app.component.scss'],
+    host: {
+        '(window:beforeunload)': 'closeComms()',
+        '(document:keyup)': 'keyEvent($event)'
+    },
+    changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AppComponent implements OnInit, AfterViewInit {
+export class AppComponent implements AfterViewInit {
 
-    @ViewChild('cbRun') cbRunRef!: ElementRef;
-    @ViewChild('sp') spRef!: ElementRef;
-    @ViewChild('hist') histRef!: ElementRef;
-    @ViewChild('duty') dutyRef!: ElementRef;
-    @ViewChild('RTD') rtdRef!: ElementRef;
+    cbRunRef = viewChild.required('cbRun', {read: ElementRef});
+    spRef = viewChild.required('sp_ref', {read: ElementRef});
+    histRef = viewChild.required('hist_ref', {read: ElementRef});
+    dutyRef = viewChild.required('duty_ref', {read: ElementRef});
+    rtdRef = viewChild.required('RTD', {read: ElementRef});
 
-    t_rtd = '--.- degC';
+    t_rtd = signal('--.- degC');
     rtdTemp = 0;
-    //rtdValid = true;
 
     lastValid: number = INVALID_TEMP;
     badCnt = 0;
 
     runFlag = false;
+    s_set_point = signal('27');
     setPoint = 27;
     prevSP = 0;
     workPoint = 0;
+
+    s_ssr_duty = signal('10');
     ssrDuty = 10;
+
+    s_hist = signal('0.5');
     hist = 0.5;
+
     ssrTMO: any;
 
     chart: any;
     chartTime: number[] = [];
     secTime: number[] = [];
 
-    duration = '';
+    duration = signal('');
 
     trash = 0;
 
-    constructor(
-        public serial: SerialService,
-        public events: EventsService,
-        public utils: UtilsService,
-        public ngZone: NgZone
-    ) {
+    new_temp = effect(()=>{
+        const temp = this.serial.s_new_temp();
+        setTimeout(() => {
+            this.newTemp(temp);
+        }, 0);
+    });
+
+    serial = inject(SerialService);
+    utils = inject(UtilsService);
+
+    constructor() {
         // ---
     }
 
@@ -90,23 +107,10 @@ export class AppComponent implements OnInit, AfterViewInit {
      */
     ngAfterViewInit(): void {
 
-        this.cbRunRef.nativeElement.checked = this.runFlag;
-        this.spRef.nativeElement.value = `${this.setPoint}`;
-        this.histRef.nativeElement.value = `${this.hist.toFixed(1)}`;
-        this.dutyRef.nativeElement.value = `${this.ssrDuty}`;
-    }
-
-    /***********************************************************************************************
-     * fn          ngOnInit
-     *
-     * brief
-     *
-     */
-    ngOnInit() {
-
-        this.events.subscribe('newTemp', (msg: gIF.tempRsp_t)=>{
-            this.newTemp(msg);
-        });
+        this.cbRunRef().nativeElement.checked = this.runFlag;
+        this.spRef().nativeElement.value = `${this.setPoint}`;
+        this.histRef().nativeElement.value = `${this.hist.toFixed(1)}`;
+        this.dutyRef().nativeElement.value = `${this.ssrDuty}`;
 
         this.createChart();
 
@@ -123,7 +127,6 @@ export class AppComponent implements OnInit, AfterViewInit {
      * brief
      *
      */
-    @HostListener('window:beforeunload')
     closeComms(){
         this.serial.closeComPort();
     };
@@ -134,21 +137,52 @@ export class AppComponent implements OnInit, AfterViewInit {
      * brief
      *
      */
-    @HostListener('document:keyup', ['$event'])
-    handleKeyboardEvent(event: KeyboardEvent) {
+    keyEvent(event: KeyboardEvent) {
+
         switch(event.key){
             case 'Escape': {
-                console.log(`escape pressed`);
-
                 this.runFlag = false;
-                this.cbRunRef.nativeElement.checked = this.runFlag;
+                this.cbRunRef().nativeElement.checked = this.runFlag;
 
                 this.setPoint = 27;
-                this.spRef.nativeElement.value = `${this.setPoint}`;
+                this.spRef().nativeElement.value = `${this.setPoint}`;
 
                 this.ssrDuty = 0;
-                this.dutyRef.nativeElement.value = `${this.ssrDuty}`;
+                this.dutyRef().nativeElement.value = `${this.ssrDuty}`;
                 break;
+            }
+            case 'Enter': {
+                this.blurInputs();
+                break;
+            }
+            case 'r': {
+                this.blurInputs();
+
+                this.runFlag = true;
+                this.cbRunRef().nativeElement.checked = this.runFlag;
+            }
+        }
+    }
+
+    /***********************************************************************************************
+     * fn          blurInputs
+     *
+     * brief
+     *
+     */
+    blurInputs() {
+
+        const activeEl = document.activeElement;
+
+        if(activeEl instanceof HTMLElement){
+            const id = activeEl.getAttribute('id');
+            switch(id){
+                case 'sp':
+                case 'hist':
+                case 'duty': {
+                    console.log(`blured: ${id}`);
+                    activeEl.blur();
+                }
             }
         }
     }
@@ -159,7 +193,11 @@ export class AppComponent implements OnInit, AfterViewInit {
      * brief
      *
      */
-    newTemp(msg: gIF.tempRsp_t){
+    newTemp(temp: gIF.tempRsp_t){
+
+        if(Number.isNaN(temp.rtd_adc)){
+            return;
+        }
 
         clearTimeout(this.ssrTMO);
         const setSSR = {} as gIF.setSSR_t;
@@ -167,7 +205,7 @@ export class AppComponent implements OnInit, AfterViewInit {
 
         const pga = 8;
         const r_ref = 1643;
-        let rtd_ohm = (msg.rtd_adc / pga) * r_ref / 2**23;
+        let rtd_ohm = (temp.rtd_adc / pga) * r_ref / 2**23;
         const A = 3.9083e-3;
         const B = -5.775e-7;
         const R0 = 100;
@@ -197,9 +235,9 @@ export class AppComponent implements OnInit, AfterViewInit {
             this.ssr_tmo();
         }, 2000);
 
-        this.rtdRef.nativeElement.style.color = 'orange';
+        this.rtdRef().nativeElement.style.color = 'orange';
         setTimeout(()=>{
-            this.rtdRef.nativeElement.style.color = 'black';
+            this.rtdRef().nativeElement.style.color = 'black';
         }, 200);
     }
 
@@ -237,7 +275,7 @@ export class AppComponent implements OnInit, AfterViewInit {
         const now = Math.floor(Date.now() / 1000);
         this.chartTime.push(now);
         const timeSpan = now - this.chartTime[0];
-        this.duration = `${this.utils.secToTime(timeSpan)}`;
+        this.duration.set(`${this.utils.secToTime(timeSpan)}`);
 
         if(this.lastValid === INVALID_TEMP){
             this.lastValid = this.rtdTemp;
@@ -265,16 +303,15 @@ export class AppComponent implements OnInit, AfterViewInit {
         }
         this.chart.data.datasets[SP_IDX].data.push(this.setPoint);
 
-        this.ngZone.run(()=>{
-            if(this.badCnt == 0){
-                this.t_rtd = `t_rtd: ${this.rtdTemp.toFixed(1)} degC`;
-            }
-            else {
-                this.t_rtd = `t_rtd: --.- degC`;
-            }
-        });
+        if(this.badCnt == 0){
+            this.t_rtd.set(`t_rtd: ${this.rtdTemp.toFixed(1)} degC`);
+        }
+        else {
+            this.t_rtd.set(`t_rtd: --.- degC`);
+        }
+
         setTimeout(() => {
-            this.chart?.update('none');
+            this.chart.update('none');
         }, 0);
     }
 
@@ -372,7 +409,7 @@ export class AppComponent implements OnInit, AfterViewInit {
      */
     runChanged(){
 
-        if(this.cbRunRef.nativeElement.checked) {
+        if(this.cbRunRef().nativeElement.checked) {
             this.runFlag = true;
         }
         else {
@@ -388,21 +425,7 @@ export class AppComponent implements OnInit, AfterViewInit {
      */
     spChanged(newVal: string){
 
-        let sp = parseInt(newVal);
-
-        if(Number.isNaN(sp)){
-            return;
-        }
-        if(sp > SP_MAX){
-            sp = SP_MAX;
-        }
-        this.spRef.nativeElement.value = `${sp}`;
-        console.log(`new sp: ${sp}`);
-
-        this.setPoint = sp;
-
-        this.prevSP = this.setPoint;
-        this.workPoint = this.setPoint - this.hist;
+        this.s_set_point.set(newVal);
     }
 
     /***********************************************************************************************
@@ -411,13 +434,22 @@ export class AppComponent implements OnInit, AfterViewInit {
      * brief
      *
      */
-    spBlur(newVal: string){
+    spBlur(){
 
-        let sp = parseInt(newVal);
+        let sp = parseInt(this.s_set_point());
 
         if(Number.isNaN(sp)){
-            this.spRef.nativeElement.value = `${this.setPoint}`;
+            this.s_set_point.set(`${this.setPoint}`);
+            return;
         }
+        if(sp > SP_MAX){
+            sp = SP_MAX;
+        }
+        this.setPoint = sp;
+        this.prevSP = sp;
+        this.workPoint = sp - this.hist;
+
+        this.s_set_point.set(`${sp}`);
     }
 
     /***********************************************************************************************
@@ -428,17 +460,30 @@ export class AppComponent implements OnInit, AfterViewInit {
      */
     histChanged(newVal: string){
 
-        let new_hist = parseFloat(newVal);
+        this.s_hist.set(newVal);
+    }
 
-        if(Number.isNaN(new_hist) || (new_hist < HIST_MIN)){
+    /***********************************************************************************************
+     * fn          histBlur
+     *
+     * brief
+     *
+     */
+    histBlur(){
+
+        let new_hist = parseFloat(this.s_hist());
+
+        if(Number.isNaN(new_hist)){
+            this.s_hist.set(`${this.hist}`);
             return;
+        }
+        if(new_hist < HIST_MIN){
+            new_hist = HIST_MIN;
         }
         if(new_hist > HIST_MAX){
             new_hist = HIST_MAX;
         }
         new_hist = Math.round(new_hist * 10) / 10;
-        console.log(`new hist: ${new_hist}`);
-        this.histRef.nativeElement.value = `${new_hist.toFixed(1)}`;
 
         this.hist = new_hist;
 
@@ -448,22 +493,7 @@ export class AppComponent implements OnInit, AfterViewInit {
         else {
             this.workPoint = this.setPoint - this.hist;
         }
-
-    }
-
-    /***********************************************************************************************
-     * fn          histBlur
-     *
-     * brief
-     *
-     */
-    histBlur(newVal: string){
-
-        let new_hist = parseFloat(newVal);
-
-        if(Number.isNaN(new_hist) || (new_hist < HIST_MIN)){
-            this.histRef.nativeElement.value = `${this.hist.toFixed(1)}`;
-        }
+        this.s_hist.set(`${new_hist.toFixed(1)}`);
     }
 
     /***********************************************************************************************
@@ -474,18 +504,7 @@ export class AppComponent implements OnInit, AfterViewInit {
      */
     dutyChanged(newVal: string){
 
-        let new_duty = parseInt(newVal);
-
-        if(Number.isNaN(new_duty) || (new_duty < DUTY_MIN)){
-            return;
-        }
-        if(new_duty > DUTY_MAX){
-            new_duty = DUTY_MAX;
-        }
-        console.log(`new hist: ${new_duty}`);
-        this.dutyRef.nativeElement.value = `${new_duty}`;
-
-        this.ssrDuty = new_duty;
+        this.s_ssr_duty.set(newVal);
     }
 
     /***********************************************************************************************
@@ -494,13 +513,23 @@ export class AppComponent implements OnInit, AfterViewInit {
      * brief
      *
      */
-    dutyBlur(newVal: string){
+    dutyBlur(){
 
-        let new_duty = parseInt(newVal);
+        let new_duty = parseInt(this.s_ssr_duty());
 
-        if(Number.isNaN(new_duty) || (new_duty < DUTY_MIN)){
-            this.dutyRef.nativeElement.value = `${this.ssrDuty}`;
+        if(Number.isNaN(new_duty)){
+            this.s_ssr_duty.set(`${this.ssrDuty}`);
+            return;
         }
+        if(new_duty < DUTY_MIN){
+            new_duty = DUTY_MIN;
+        }
+        if(new_duty > DUTY_MAX){
+            new_duty = DUTY_MAX;
+        }
+        this.ssrDuty = new_duty;
+
+        this.s_ssr_duty.set(`${new_duty}`);
     }
 
 }

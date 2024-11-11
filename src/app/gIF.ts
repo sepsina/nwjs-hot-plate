@@ -9,38 +9,12 @@ export enum eRxState {
     E_STATE_RX_WAIT_DATA,
 }
 
-export interface spCmd_t {
-    type: number;
-    retryCnt: number;
-    param:string;
-}
-
-export interface tsSet_t {
-    runFlag: number;
-    tcTemp: number;
-    setPoint: number;
-    hist: number;
-    duty: number;
-}
-
 export interface setSSR_t {
     duty: number;
 }
 
 export interface tempRsp_t {
     rtd_adc: number;
-}
-
-export interface rdKeys_t {
-    status: number;
-    nwkKey: string;
-    panId: number;
-    nwkCh: number;
-}
-
-export interface slMsg_t {
-    type: number;
-    data: number[];
 }
 
 export interface msgLogs_t {
@@ -63,7 +37,7 @@ export class rwBuf_t {
     wrBuf!: DataView;
 
     constructor(){
-
+        // ---
     }
 
     read_uint8(){
